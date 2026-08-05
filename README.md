@@ -1,6 +1,7 @@
 # scRNA-seq / TCR-seq analysis code
 
-Analysis code accompanying manuscript "Phase I Clinical Trial of Allogeneic Cytomegalovirus-specific T Cells in Combination with Pembrolizumab for Recurrent Glioblastoma".
+Analysis code accompanying manuscript 
+"Phase I Clinical Trial of Allogeneic Cytomegalovirus-specific T Cells in Combination with Pembrolizumab for Recurrent Glioblastoma".
 This repository processes 10x Chromium Single Cell 5' Gene Expression +
 Antibody Capture (Hashtag + peptide-MHC multimer) + V(D)J (TCR) data, and
 separately, deep (bulk) TCRB repertoire sequencing data, from raw
