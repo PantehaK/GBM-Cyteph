@@ -1,7 +1,3 @@
-[README.md](https://github.com/user-attachments/files/30728962/README.md)
-# GBM-Cyteph
-The following analytical codes were used to analyse single-cell RNA/TCR and Deep sequencing TCR data from four CMV-specific Cyteph products generated in QIMR Berghofer.
-
 # scRNA-seq / TCR-seq analysis code
 
 Analysis code accompanying the manuscript "Phase I Clinical Trial of Allogeneic Cytomegalovirus-Specific T Cells in Combination with Pembrolizumab for Recurrent Glioblastoma".
