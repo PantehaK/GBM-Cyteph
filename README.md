@@ -1,82 +1,108 @@
-# scRNA-seq / TCR-seq analysis code
+## ============================================================================
+## 03_doublet_removal.R
+##
+## Runs DoubletFinder on each sample independently: a quick clustering pass
+## is used to estimate the homotypic doublet proportion, pK is chosen via a
+## parameter sweep, and predicted doublets are removed.
+##
+## Input : output/rds/02_seurat_objects_sctransformed_<project_tag>.rds
+## Output: output/rds/03_seurat_objects_doublets_removed_<project_tag>.rds
+##         output/csv/03_post_doublet_removal_summary_<project_tag>.csv
+##         output/plots/<sample>_pK_selection_<project_tag>.jpg
+## ============================================================================
 
-Analysis code accompanying the manuscript "Phase I Clinical Trial of Allogeneic Cytomegalovirus-Specific T Cells in Combination with Pembrolizumab for Recurrent Glioblastoma".
-This repository processes 10x Chromium Single Cell 5' Gene Expression +
-Antibody Capture (Hashtag + peptide-MHC multimer) + V(D)J (TCR) data, and
-separately, deep TCRB repertoire sequencing data from Adaptive, from raw
-CellRanger/sequencing output through to the figures and tables reported in
-the manuscript.
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(DoubletFinder)
+library(reticulate)
+library(dplyr)
 
-## Repository structure
+source("00_config.R")
 
-```
-00_config.R                    Shared paths/settings sourced by every script
-01_quality_control/            Per-sample QC, doublet removal, multimer calling, merge
-  feature_references/            CellRanger antibody-capture feature-reference CSVs
-02_clustering/                 Integration, clustering, cell-type annotation, clonal diversity
-03_tcr_analysis/
-  01_single_cell_vdj/            10x V(D)J contig processing and clonotype export
-  02_bulk_deep_sequencing/       Deep TCRB repertoire diversity/tracking (immunarch)
-```
+# Assumed/expected doublet rate for 10x Chromium loading (adjust to your
+# target cell recovery per the 10x doublet-rate table).
+expected_doublet_rate <- 0.08
 
-Each folder has its own `README.md` with a script-by-script description.
-Scripts are numbered in the order they're meant to be run *within* each
-folder; see "Execution order" below for how the folders relate to each
-other end-to-end.
+seurat_objects <- readRDS(file.path(rds_dir, paste0("02_seurat_objects_sctransformed_", project_tag, ".rds")))
+print("Loaded Seurat objects:")
+print(names(seurat_objects))
 
-## Execution order
+for (sample_name in names(seurat_objects)) {
+  seurat_obj <- seurat_objects[[sample_name]]
+  print(paste("Processing DoubletFinder for:", sample_name))
 
-```
-01_quality_control/01_load_and_create_seurat_objects.R
-01_quality_control/02_qc_filtering_and_sctransform.R
-01_quality_control/03_doublet_removal.R
-01_quality_control/04_cell_cycle_scoring.R
-   |
-   +--> 03_tcr_analysis/01_single_cell_vdj/01_vdj_merge.R
-   +--> 03_tcr_analysis/01_single_cell_vdj/02_tcr_chain_qc_and_collapse.R
-   |
-01_quality_control/05_multimer_calling_and_merge.R   (joins TCR chain calls in)
-   |
-02_clustering/01_integration_and_clustering.R
-02_clustering/02_celltype_annotation_and_markers.R
-02_clustering/03_clonal_composition_and_diversity.R
-   |
-   +--> 03_tcr_analysis/01_single_cell_vdj/03_export_paired_clones.R
+  if (ncol(seurat_obj) < 100) {
+    print(paste("Skipping", sample_name, "- not enough cells to run DoubletFinder."))
+    next
+  }
 
-03_tcr_analysis/02_bulk_deep_sequencing/*.R   (independent of the above;
-                                                 uses its own deep-sequencing input data)
-```
+  DefaultAssay(seurat_obj) <- "SCT"
+  seurat_obj <- FindNeighbors(seurat_obj, dims = 1:15)
+  seurat_obj <- FindClusters(seurat_obj, resolution = 0.5)
+  seurat_obj <- RunUMAP(seurat_obj, dims = 1:10)
 
-## Multiplexed antibody-capture panel (4 products, incl. CMV-specific barcoded multimers)
+  options(future.globals.maxSize = 2000 * 1024^2)
 
-Each 10x GEM well was co-stained with a shared panel of sample-demultiplexing
-Hashtag antibodies and peptide-MHC multimers, split across two
-feature-reference CSVs (`01_quality_control/feature_references/`). Four
-antibody-capture products were processed with this pipeline
-(`multimer_products` in `00_config.R`): **CYTCMVA001, CYTCMVA002,
-CYTCMVA003, CYTCMVA006**. Multimer
-specificity is called per cell in
-`01_quality_control/05_multimer_calling_and_merge.R` and propagated through
-clustering and clonotype export. See `01_quality_control/README.md` for
-details of the calling/cutoff logic.
+  # pK parameter sweep
+  sweep.res.list <- paramSweep(seurat_obj, PCs = 1:10, sct = TRUE)
+  sweep.stats <- summarizeSweep(sweep.res.list, GT = FALSE)
+  bcmvn <- find.pK(sweep.stats)
 
-## Environment
+  p_pk <- ggplot(bcmvn, aes(x = as.numeric(as.character(pK)), y = BCmetric)) +
+    geom_point() + geom_line() +
+    labs(title = paste("pK selection for", sample_name), x = "pK", y = "BCmvn metric") +
+    theme_minimal()
+  ggsave(file.path(plot_dir, paste0(sample_name, "_pK_selection_", project_tag, ".jpg")),
+         plot = p_pk, height = 5, width = 5, dpi = 300)
 
-Analyses were run in R (>= 4.3) with the following key packages:
+  pK_value <- as.numeric(as.character(bcmvn$pK[which.max(bcmvn$BCmetric)]))
+  print(paste("Optimal pK for", sample_name, ":", pK_value))
 
-- `Seurat` (v5, Assay5/`CreateAssay5Object`), `SeuratObject`
-- `sctransform`, `DoubletFinder`, `harmony`
-- `immunarch`
-- `tidyverse` (`dplyr`, `tidyr`, `readr`, `stringr`, `purrr`, `tibble`, `ggplot2`)
-- `patchwork`, `cowplot`, `ggpubr`, `ggrepel`, `ggalluvial`, `circlize`, `scales`
-- `matrixStats`, `Matrix`
-- `openxlsx`, `readxl`
+  # Homotypic doublet proportion + expected doublets
+  annotations <- seurat_obj@meta.data$seurat_clusters
+  homotypic.prop <- modelHomotypic(annotations)
+  nExp_poi <- round(expected_doublet_rate * ncol(seurat_obj))
+  nExp_poi_adj <- round(nExp_poi * (1 - homotypic.prop))
 
-## Data availability
+  seurat_obj <- doubletFinder(seurat_obj,
+                               PCs = 1:10,
+                               pN = 0.25,
+                               pK = pK_value,
+                               nExp = nExp_poi_adj,
+                               sct = TRUE)
 
-Raw sequencing data (10x Chromium Gene Expression/V(D)J/Antibody Capture
-FASTQs) will be available upon request from European Genome-Phenome Archive (EGA) following manuscript publication. Processed tsv and mtx files as well as final Seurat Object are available upon request from Zenodo accession: 10.5281/zenodo.21800156. This
-repository contains analysis code only; no patient-identifiable data are
-included. Paths in `00_config.R` are placeholders (`data/`, `output/`) --
-point `data_dir` at your own local copy of the raw/processed data before
-running.
+  doublet_column <- grep("DF.classifications", colnames(seurat_obj@meta.data), value = TRUE)
+  if (length(doublet_column) == 0) {
+    print(paste("Skipping", sample_name, "- DoubletFinder classification column missing."))
+    next
+  }
+
+  print(paste("Filtering out doublets from:", sample_name))
+  seurat_obj_filtered <- subset(seurat_obj, subset = !!as.name(doublet_column) == "Singlet")
+  print(paste("Doublet removal complete for", sample_name, "- retained", ncol(seurat_obj_filtered), "cells."))
+
+  seurat_objects[[sample_name]] <- seurat_obj_filtered
+}
+
+print("DoubletFinder processing completed for all Seurat objects!")
+
+# Post-doublet-removal QC summary
+qc_summary <- list()
+for (sample_name in names(seurat_objects)) {
+  seurat_obj <- seurat_objects[[sample_name]]
+  qc_summary[[sample_name]] <- tibble(
+    sample = sample_name,
+    nCells = ncol(seurat_obj),
+    median_nCount_RNA   = median(seurat_obj$nCount_RNA),
+    median_nFeature_RNA = median(seurat_obj$nFeature_RNA),
+    median_log10_UMI    = median(log10(seurat_obj$nCount_RNA + 1))
+  )
+}
+write.csv(bind_rows(qc_summary),
+          file.path(csv_dir, paste0("03_post_doublet_removal_summary_", project_tag, ".csv")),
+          row.names = FALSE)
+
+saveRDS(seurat_objects, file.path(rds_dir, paste0("03_seurat_objects_doublets_removed_", project_tag, ".rds")))
