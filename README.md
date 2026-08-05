@@ -79,8 +79,8 @@ Raw sequencing data (10x Chromium Gene Expression/V(D)J/Antibody Capture
 FASTQs) will be available to request from the European Genome-Phenome 
 Archive and accession numbers will be updated after the manuscript is published. 
 Processed counts, features, barcodes and final Seurat Object can be requested from
-Zenodo under the accession number: 10.5281/zenodo.21800156
-repository contains analysis code only; no patient-identifiable data are
+Zenodo under the accession number: 10.5281/zenodo.21800156.
+This repository contains analysis code only; no patient-identifiable data are
 included. Paths in `00_config.R` are placeholders (`data/`, `output/`) --
 point `data_dir` at your own local copy of the raw/processed data before
 running.
