@@ -47,7 +47,7 @@ other end-to-end.
                                                  uses its own deep-sequencing input data)
 ```
 
-## Multiplexed antibody-capture panel (4 products, incl. an NLV/CMV multimer)
+## Multiplexed antibody-capture panel (4 products, incl. CMV-specific barcoded multimers)
 
 Each 10x GEM well was co-stained with a shared panel of sample-demultiplexing
 Hashtag antibodies and peptide-MHC multimers, split across two
